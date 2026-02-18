@@ -71,18 +71,20 @@ class GridUI:
         self.fuel_levels = {}   # rod number (F only) -> fuel percentage
         self.pump_flow = {}     # pump number -> flow rate
         self.pump_status = {}   # pump number -> on/off
-        self.coolant_temp_avg = 300.0  # average coolant temperature
+        self.coolant_temp_avg = 293.0  # average coolant temperature (room temp)
         self.core_power = 0.0   # core power percentage
         self.power_output_mw = 0.0  # actual power in MW
-        self.pressure = 100.0   # pressure bar
+        self.pressure = 100.0   # pressure bar (atmospheric)
         self.integrity = 100.0  # structural integrity percentage
         self.turbine_rpm = 0.0  # turbine speed
         self.turbine_power_mw = 0.0  # electrical power output
-        self.radiation_level = 0.0  # control room radiation in mSv/h
+        self.radiation_level = 0.15  # control room radiation in mSv/h (baseline background)
         self.neutron_flux = {}  # rod number -> neutron flux level
         self.running = False    # reactor running state
         self.startup_in_progress = False  # prevent multiple startups
         self.alerts = {}  # alert status dictionary
+        self.staged_commands = []  # commands staged for batch execution
+        self.rod_temp_offsets = {}  # individual temperature offsets for each rod
 
         # Main container
         main_frame = tk.Frame(root, bg="black")
@@ -118,17 +120,20 @@ class GridUI:
                     canvas.create_text(CELL_SIZE-5, 5, text=str(number), anchor="ne",
                                        fill="#aaaaaa", font=("Helvetica", 8))
 
-                    # Create temperature and pressure bars at bottom
-                    bar_height = CELL_SIZE // 3
+                    # Create temperature and pressure bars at bottom (each 1/6 of cell)
+                    bar_height = CELL_SIZE // 6
                     bar_width = (CELL_SIZE - 4) // 2
-                    bar_y = CELL_SIZE - bar_height
                     
-                    # Temperature bar (left)
-                    temp_bar = canvas.create_rectangle(2, bar_y, 2 + bar_width, CELL_SIZE - 2, 
+                    # Temperature bar (bottom left, takes 1/6 height)
+                    temp_bar_y = CELL_SIZE - bar_height - 2
+                    temp_bar = canvas.create_rectangle(2, temp_bar_y, 2 + bar_width, CELL_SIZE - 2, 
                                                         fill="#1a1a1a", outline="#444", width=1)
-                    # Pressure bar (right)
-                    pressure_bar = canvas.create_rectangle(2 + bar_width + 2, bar_y, CELL_SIZE - 2, CELL_SIZE - 2,
+                    # Pressure bar (bottom right, takes 1/6 height)
+                    pressure_bar = canvas.create_rectangle(2 + bar_width + 2, temp_bar_y, CELL_SIZE - 2, CELL_SIZE - 2,
                                                            fill="#1a1a1a", outline="#444", width=1)
+                    
+                    # Initialize individual temperature offset for this rod
+                    self.rod_temp_offsets[number] = random.uniform(-5, 5)
 
                     self.num_to_cell[number] = (canvas, letter, temp_bar, pressure_bar)
                     self.num_to_pos[number] = (r, c)
@@ -142,6 +147,16 @@ class GridUI:
                                 lambda e, n=number: self.open_zoom(n))
 
                     number += 1
+
+        # ARCCS log below grid
+        arccs_label = tk.Label(left_frame, text="ARCCS (Automated Reactor Computer Control System)", 
+                               bg="black", fg="#00aaff", font=("Helvetica", 9, "bold"))
+        arccs_label.pack(anchor="w", pady=(10, 3))
+
+        self.arccs_text = tk.Text(left_frame, height=8, width=70, bg="#0a0a15", fg="#88ccff", 
+                                  font=("Courier", 8), wrap="word")
+        self.arccs_text.pack(fill="both", expand=False, pady=(0, 5))
+        self.arccs_text.config(state="disabled")
 
         # Right side: Control panels
         right_frame = tk.Frame(main_frame, bg="black")
@@ -262,6 +277,11 @@ class GridUI:
         self.log_console("╚════════════════════════════════════════════╝")
         self.log_console("Type 'start' to begin startup sequence")
         self.log_console("Type 'help' for command list")
+        
+        # ARCCS initial message
+        self.log_arccs("ARCCS v2.3 initialized - automatic control STANDBY")
+        self.log_arccs("Background radiation: 0.15 mSv/h")
+        self.log_arccs("System status: All parameters nominal")
 
     # -------- FLUCTUATION ENGINE --------
     def fluctuation_loop(self):
@@ -281,6 +301,13 @@ class GridUI:
             for pump_num in list(self.pump_flow.keys()):
                 if self.pump_status.get(pump_num, False):
                     self.pump_flow[pump_num] += random.uniform(-2, 2)
+            
+            # Individual rod temperature offset fluctuations
+            for rod_num in self.rod_temp_offsets:
+                # Small drift in individual rod temperatures
+                self.rod_temp_offsets[rod_num] += random.uniform(-0.5, 0.5)
+                # Keep offsets in reasonable range (-10K to +10K)
+                self.rod_temp_offsets[rod_num] = max(-10, min(10, self.rod_temp_offsets[rod_num]))
             
             # Calculate neutron flux for each position
             self.calculate_neutron_flux()
@@ -320,7 +347,11 @@ class GridUI:
             # Update alerts based on conditions
             self.update_alerts()
             
+            # ARCCS automated control logic
+            self.arccs_control()
+            
             self.update_status_displays()
+            self.update_grid_bars()
         elif self.startup_in_progress:
             # Add fluctuations during startup too
             self.coolant_temp_avg += random.uniform(-1, 1)
@@ -710,6 +741,55 @@ class GridUI:
 
             self.status_labels[key] = value_label
 
+    def arccs_control(self):
+        """ARCCS automated control logic - adjusts auto rods and provides recommendations"""
+        if not self.running:
+            return
+        
+        # Check power deviation
+        if self.core_power > 102:
+            # Power excursion - insert auto rods slightly
+            auto_rods = [num for num, cell_data in self.num_to_cell.items() if cell_data[1] == "A"]
+            for rod_num in auto_rods:
+                current_insertion = self.control_rod_levels.get(rod_num, 0)
+                if current_insertion < 95:  # Don't go to 100%, leave some margin
+                    new_insertion = min(95, current_insertion + 2)
+                    self.control_rod_levels[rod_num] = new_insertion
+            self.log_arccs(f"AUTO: Power {self.core_power:.1f}% - inserting auto control rods")
+            
+        elif self.core_power < 98 and self.core_power > 50:
+            # Power deficit - withdraw auto rods slightly
+            auto_rods = [num for num, cell_data in self.num_to_cell.items() if cell_data[1] == "A"]
+            for rod_num in auto_rods:
+                current_insertion = self.control_rod_levels.get(rod_num, 0)
+                if current_insertion > 5:  # Don't fully withdraw
+                    new_insertion = max(5, current_insertion - 2)
+                    self.control_rod_levels[rod_num] = new_insertion
+            self.log_arccs(f"AUTO: Power {self.core_power:.1f}% - withdrawing auto control rods")
+        
+        # Check temperature
+        if self.coolant_temp_avg > 520:
+            self.log_arccs(f"WARN: Coolant temp {self.coolant_temp_avg:.0f}K exceeds nominal - recommend reduce power")
+        
+        # Check neutron flux imbalance
+        if self.neutron_flux:
+            max_flux = max(self.neutron_flux.values())
+            min_flux = min(self.neutron_flux.values())
+            if max_flux > min_flux * 1.8:
+                self.log_arccs(f"WARN: Flux tilt detected (max/min = {max_flux/min_flux:.2f})")
+        
+        # Check fuel status
+        if self.fuel_levels:
+            low_fuel_rods = [num for num, level in self.fuel_levels.items() if level < 30]
+            if low_fuel_rods and random.random() < 0.05:  # Don't spam
+                self.log_arccs(f"INFO: {len(low_fuel_rods)} fuel rods below 30% - schedule refueling")
+        
+        # Check pump status
+        if self.pump_flow.get(1, 0) < 100 and self.core_power > 80:
+            self.log_arccs(f"WARN: Pump 1 flow {self.pump_flow.get(1, 0):.0f} m³/h insufficient for power level")
+        if self.pump_flow.get(2, 0) < 100 and self.core_power > 80:
+            self.log_arccs(f"WARN: Pump 2 flow {self.pump_flow.get(2, 0):.0f} m³/h insufficient for power level")
+
     def update_status_displays(self):
         """Update all status display labels"""
         if "core_power" in self.status_labels:
@@ -948,9 +1028,9 @@ class GridUI:
         total_weight = sum(weights)
         weighted_avg = sum(temp * w for (_, temp), w in zip(nearest_3, weights)) / total_weight
 
-        # Add small random variation
-        weighted_avg += random.uniform(-2, 2)
-        return weighted_avg
+        # Add individual rod temperature offset (persists across calls, varies per rod)
+        rod_offset = self.rod_temp_offsets.get(rod_num, 0.0)
+        return weighted_avg + rod_offset
 
     def calculate_rod_pressure(self, rod_num):
         """Calculate pressure at rod location (varies slightly by position)"""
@@ -971,6 +1051,14 @@ class GridUI:
         self.console_text.insert("end", message + "\n")
         self.console_text.see("end")
         self.console_text.config(state="disabled")
+
+    def log_arccs(self, message):
+        """Log messages to ARCCS system log"""
+        timestamp = time.strftime("%H:%M:%S")
+        self.arccs_text.config(state="normal")
+        self.arccs_text.insert("end", f"[{timestamp}] {message}\n")
+        self.arccs_text.see("end")
+        self.arccs_text.config(state="disabled")
 
     def submit_command(self, event=None):
         cmd = self.cmd_input.get().strip()
@@ -1164,7 +1252,10 @@ class GridUI:
                 self.core_power = 0.0
                 self.power_output_mw = 0.0
                 self.pressure = 100.0
-                self.coolant_temp_avg = 300.0
+                self.coolant_temp_avg = 293.0  # Room temperature
+                self.radiation_level = 0.15  # Background radiation
+                self.turbine_rpm = 0.0
+                self.turbine_power_mw = 0.0
                 self.integrity = 100.0
                 self.running = False
                 # Reset fuel levels
@@ -1194,19 +1285,48 @@ class GridUI:
                 else:
                     self.log_console("✗ Startup code rejected - STARTUP ABORTED")
 
+            elif cmd == "stage":
+                if len(parts) < 2:
+                    self.log_console("ERROR: stage requires 'run', 'clear', or a command to stage")
+                    return
+                
+                if parts[1] == "run":
+                    if not self.staged_commands:
+                        self.log_console("No commands staged")
+                        return
+                    self.log_console(f"\n>>> Executing {len(self.staged_commands)} staged commands:")
+                    for staged_cmd in self.staged_commands:
+                        self.log_console(f"  > {staged_cmd}")
+                        self.process_gui_command(staged_cmd)
+                    self.staged_commands.clear()
+                    self.log_console(">>> All staged commands executed\n")
+                    
+                elif parts[1] == "clear":
+                    count = len(self.staged_commands)
+                    self.staged_commands.clear()
+                    self.log_console(f"Cleared {count} staged commands")
+                    
+                else:
+                    # Stage the rest of the command
+                    staged_cmd = " ".join(parts[1:])
+                    self.staged_commands.append(staged_cmd)
+                    self.log_console(f"Staged: {staged_cmd} (total: {len(self.staged_commands)})")
+
             elif cmd == "help":
                 self.log_console("\n" + "="*40)
                 self.log_console("AVAILABLE COMMANDS:")
-                self.log_console("  start               - Begin reactor startup")
-                self.log_console("  scram               - Emergency shutdown")
-                self.log_console("  set <rod> <pct>     - Set control rod % (C/A only)")
-                self.log_console("  temp <sensor> <K>   - Set temperature sensor")
-                self.log_console("  power <pct>         - Set core power %")
-                self.log_console("  pressure <bar>      - Set system pressure")
-                self.log_console("  pump <num> <flow>   - Set pump flow m³/h")
-                self.log_console("  reset               - Reset to defaults")
-                self.log_console("  status              - Show reactor status")
-                self.log_console("\nNOTE: Values fluctuate realistically")
+                self.log_console("  start                 - Begin reactor startup")
+                self.log_console("  scram                 - Emergency shutdown")
+                self.log_console("  set <rod> <pct>       - Set control rod % (C/A only)")
+                self.log_console("  temp <sensor> <K>     - Set temperature sensor")
+                self.log_console("  power <pct>           - Set core power %")
+                self.log_console("  pressure <bar>        - Set system pressure")
+                self.log_console("  pump <num> <flow>     - Set pump flow m³/h")
+                self.log_console("  stage <cmd>           - Stage a command for later")
+                self.log_console("  stage run             - Execute all staged commands")
+                self.log_console("  stage clear           - Clear staged commands")
+                self.log_console("  reset                 - Reset to defaults")
+                self.log_console("  status                - Show reactor status")
                 self.log_console("Click rods for detailed view (temp/pressure/fuel)")
                 self.log_console("="*40 + "\n")
 
