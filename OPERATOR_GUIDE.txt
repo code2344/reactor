@@ -257,11 +257,26 @@ The Automated Reactor Computer Control System (ARCCS) provides:
   - Pump performance relative to power level
 
 ▸ RECOMMENDATIONS
+  The gold recommendation bar (above the log) displays real-time
+  operational guidance:
+  - Specific rod numbers to adjust
+  - Coolant flow rate changes needed
+  - Critical warnings requiring immediate action
+  - Updates every second based on reactor state
+  
   ARCCS will suggest operator actions for:
   - Temperature control
   - Flux balancing
   - Refueling schedules
   - Pump adjustments
+  
+▸ INTELLIGENT LOGGING
+  The ARCCS log is rate-limited to prevent spam:
+  - Auto rod actions: Max every 10 seconds
+  - Temperature warnings: Max every 15 seconds
+  - Flux warnings: Max every 20 seconds
+  - Fuel status: Max every 60 seconds
+  - Pump warnings: Max every 12 seconds
 
 Note: ARCCS recommendations should be carefully considered but operators have
 final authority. Override automatic actions only when necessary.
@@ -311,20 +326,29 @@ Routine Adjustments:
 To increase power:
   1. Withdraw control rods gradually (reduce insertion %)
   2. Monitor temperature and pressure
-  3. Allow ARCCS to stabilize
-  4. Example: stage set 44 15
+  3. Allow ARCCS to stabilize with auto rods
+  4. Verify coolant flow is adequate (120 m³/h minimum)
+  5. Example: stage set 44 15
              stage set 31 15
              stage run
 
 To decrease power:
   1. Insert control rods (increase insertion %)
-  2. Reduce pressure if needed
-  3. Monitor coolant temperature
+  2. Monitor coolant temperature
+  3. ARCCS will assist with auto rods
+  
+IMPORTANT - Realistic Operation:
+  - There is NO direct "power" command (removed for realism)
+  - Power is controlled ONLY via control rod positions
+  - Withdrawing rods → increases reactivity → increases power
+  - Inserting rods → decreases reactivity → decreases power
+  - This simulates real reactor physics
   
 Limits:
   - Do not change rod positions >10% per adjustment
   - Allow 30 seconds between major changes
   - Never fully withdraw all rods simultaneously
+  - Monitor ARCCS recommendations continuously
 
 7.4 FUEL MANAGEMENT
 ───────────────────
