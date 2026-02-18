@@ -166,7 +166,7 @@ class GridUI:
         scram_btn = tk.Button(right_frame, text="⚠ SCRAM ⚠",
                                command=self.scram,
                                font=("Helvetica", 14, "bold"),
-                               bg="#ff0000", fg="white",
+                               bg="#ff0000", fg="#111",
                                activebackground="#cc0000", activeforeground="#ffffff",
                                highlightthickness=0)
         scram_btn.pack(fill="x", pady=(0, 10))
@@ -504,14 +504,14 @@ class GridUI:
         self.log_console("Core temperature decreasing...")
         
         step = 5.0
-        while self.coolant_temp_avg > 320:
-            self.coolant_temp_avg = max(300, self.coolant_temp_avg - step)
+        while self.coolant_temp_avg > 300:
+            self.coolant_temp_avg = max(293, self.coolant_temp_avg - step)
             self.root.after(0, self.update_status_displays)
             time.sleep(0.2)
-        self.coolant_temp_avg = 300.0
+        self.coolant_temp_avg = 293.0
         self.root.after(0, self.update_status_displays)
         
-        self.log_console("✓ Core temperature: 300K (cold shutdown)")
+        self.log_console("✓ Core temperature: 293K (cold shutdown)")
         time.sleep(1.0)
         
         # Pressure reduction
@@ -534,6 +534,9 @@ class GridUI:
         self.log_console("  All control rods: FULLY INSERTED")
         self.log_console("  Cooling systems: ACTIVE")
         self.log_console("="*50)
+        
+        self.log_arccs("SCRAM completed - reactor in safe shutdown state")
+        self.log_arccs("Automatic control STANDBY - awaiting restart authorization")
 
     def request_startup_pin(self):
         """Request PIN for reactor startup"""
@@ -616,7 +619,7 @@ class GridUI:
         self.log_console("\nPhase 3: Core thermal preparation")
         time.sleep(0.8)
         self.log_console("  Heating reactor core...")
-        self._gradual_temp_startup(300, 380)
+        self._gradual_temp_startup(293, 380)
         time.sleep(0.5)
         self.log_console("  ✓ Core temperature: 380K")
         
@@ -675,6 +678,9 @@ class GridUI:
         self.log_console("  Pressure: 155 bar")
         self.log_console("  All systems: NOMINAL")
         self.log_console("="*50)
+        
+        self.log_arccs("Reactor startup complete - automatic control ACTIVE")
+        self.log_arccs("All systems nominal - monitoring core parameters")
         
         self.startup_in_progress = False
 
@@ -965,7 +971,7 @@ class GridUI:
     def calculate_temperature(self, rod_num):
         """Calculate temperature for a T rod based on nearby T sensors"""
         if rod_num not in self.num_to_pos:
-            return 300.0
+            return 293.0
 
         # If this rod has an explicit temperature set, use it
         if rod_num in self.temperatures:
@@ -992,12 +998,12 @@ class GridUI:
             weighted_avg = sum(t * w for t, w in zip(temps, weights)) / total_weight
             return weighted_avg
 
-        return 300.0  # Default if no nearby sensors
+        return 293.0  # Default room temperature if no nearby sensors
 
     def calculate_rod_temperature(self, rod_num):
         """Calculate temperature for any rod based on nearest 3 T sensors"""
         if rod_num not in self.num_to_pos:
-            return 300.0
+            return 293.0
 
         # If this is a T rod with explicit temperature, use it
         cell_data = self.num_to_cell.get(rod_num, (None, None, None, None))

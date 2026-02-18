@@ -1,0 +1,473 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    RBMK-1000 REACTOR CONTROL STATION
+                         OPERATOR GUIDANCE MANUAL
+                              Version 1.0
+═══════════════════════════════════════════════════════════════════════════════
+
+TABLE OF CONTENTS
+─────────────────
+1. Introduction
+2. Control Interface Overview
+3. Rod Types and Functions
+4. Command Reference
+5. Alert Indicators
+6. ARCCS System
+7. Normal Operating Procedures
+8. Emergency Procedures
+9. Parameter Limits
+
+═══════════════════════════════════════════════════════════════════════════════
+1. INTRODUCTION
+═══════════════════════════════════════════════════════════════════════════════
+
+This RBMK-1000 reactor control station provides comprehensive monitoring and
+control capabilities for reactor operations. The station integrates manual
+operator controls with the ARCCS (Automated Reactor Computer Control System)
+for optimal reactor management.
+
+CRITICAL: This is a high-power nuclear reactor. Always follow procedures and
+respect operational limits.
+
+═══════════════════════════════════════════════════════════════════════════════
+2. CONTROL INTERFACE OVERVIEW
+═══════════════════════════════════════════════════════════════════════════════
+
+MAIN DISPLAY SECTIONS:
+────────────────────
+
+▸ REACTOR GRID (Left)
+  - 13x13 grid showing all reactor positions
+  - Click any rod for detailed information
+  - Each cell shows:
+    * Rod type (letter in upper left)
+    * Rod number (number in upper right)
+    * Temperature bar (bottom left, 1/6 of cell height)
+    * Pressure bar (bottom right, 1/6 of cell height)
+
+▸ STATUS PANELS (Right, Top)
+  CORE:       Power output, average temperature
+  SYSTEM:     Pressure, structural integrity
+  TURBINES:   Speed (RPM), electrical power output
+  RADIATION:  Control room exposure level
+  PUMPS:      Coolant flow rates and status
+
+▸ ALERT GRID (Right, Middle)
+  - 4x4 grid of status indicators
+  - See Section 5 for alert meanings
+
+▸ CONSOLE (Right, Bottom)
+  - Command input/output
+  - Type 'help' for command list
+
+▸ ARCCS LOG (Left, Below Grid)
+  - Automated control system messages
+  - Recommendations and warnings
+  - Auto rod adjustments
+
+═══════════════════════════════════════════════════════════════════════════════
+3. ROD TYPES AND FUNCTIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+P - PLACEHOLDER
+    Empty position in the grid.
+    No function.
+
+R - REFLECTOR
+    Neutron reflector rods.
+    Direct neutrons back into the core.
+    Not controllable.
+
+G - GRAPHITE
+    Graphite moderator channels.
+    Slow neutrons to sustain fission.
+    Not controllable.
+
+T - TEMPERATURE SENSOR
+    Coolant temperature measurement points.
+    Can be manually set via 'temp' command.
+    Critical for thermal monitoring.
+
+A - AUTO CONTROL ROD
+    Automatically controlled by ARCCS.
+    Adjust reactor power automatically.
+    Can also be manually controlled.
+    211 total control positions in RBMK-1000.
+
+F - FUEL
+    Fuel rod channels containing uranium.
+    Fuel depletes over time (differential rates based on neutron flux).
+    Monitor fuel levels regularly.
+    Schedule refueling when levels drop below 30%.
+
+C - CONTROL ROD
+    Manual control rods.
+    Primary means of reactivity control.
+    Operator manipulates these for power changes.
+    Insertion percentage: 0% (fully withdrawn) to 100% (fully inserted)
+
+═══════════════════════════════════════════════════════════════════════════════
+4. COMMAND REFERENCE
+═══════════════════════════════════════════════════════════════════════════════
+
+REACTOR CONTROL COMMANDS:
+─────────────────────────
+
+start
+  Begin reactor startup sequence.
+  Requires PIN authentication (default: 1234).
+  Automatic 5-phase startup (~35 seconds).
+  
+scram
+  Emergency shutdown.
+  Immediately inserts all control rods.
+  Use in emergency situations only.
+
+set <rod_number> <percentage>
+  Set control rod insertion.
+  Example: set 66 20
+    Sets rod #66 to 20% insertion
+  Valid for C (Control) and A (Auto) rod types only.
+  Percentage range: 0-100
+    0   = fully withdrawn (maximum reactivity)
+    100 = fully inserted (minimum reactivity)
+
+temp <sensor_number> <kelvin>
+  Set temperature sensor reading.
+  Example: temp 98 450
+    Sets temperature sensor #98 to 450K
+  Valid for T (Temperature) rod types only.
+  Range: 0-3500K
+  
+power <percentage>
+  Adjust core power output.
+  Example: power 75
+    Sets reactor to 75% power
+  Range: 0-100%
+  Changes gradually to simulate realistic operation.
+  
+pressure <bar>
+  Adjust system pressure.
+  Example: pressure 155
+    Sets pressure to 155 bar
+  Range: 0-200 bar
+  Changes gradually.
+  
+pump <pump_number> <flow_rate>
+  Set coolant pump flow rate.
+  Example: pump 1 120
+    Sets pump #1 to 120 m³/h
+  Can also use: pump 1 on/off
+
+BATCH OPERATION (STAGING):
+───────────────────────────
+
+stage <command>
+  Stage a command for batch execution.
+  Example: stage set 44 37
+  
+stage run
+  Execute all staged commands simultaneously.
+  Example workflow:
+    > stage set 44 37
+    > stage set 31 37  
+    > stage set 79 37
+    > stage run
+  All three rods adjust at the same time.
+  
+stage clear
+  Clear all staged commands without executing.
+
+UTILITY COMMANDS:
+─────────────────
+
+status
+  Display comprehensive reactor status.
+  Shows all parameters, fuel levels, active alerts.
+  
+reset
+  Reset all systems to default safe state.
+  Reactor goes offline.
+  All parameters return to room temperature/baseline.
+  
+help
+  Display command list.
+
+═══════════════════════════════════════════════════════════════════════════════
+5. ALERT INDICATORS
+═══════════════════════════════════════════════════════════════════════════════
+
+The 4x4 Alert Grid displays the following conditions:
+
+ROW 1 (Power/Temperature):
+─────────────────────────
+  Power Excursion     - Core power >105% (DANGEROUS)
+  Temp High          - Coolant temperature >530K
+  Rod Drive Fault    - Control rod mechanism failure
+  Overspeed Turbine  - Turbine RPM >3100
+
+ROW 2 (Flux/Temperature):
+─────────────────────────
+  Flux Tilt          - Neutron flux imbalance >1.5x
+  Temp Low           - Coolant temperature <280K (pre-startup only)
+  Rod Rate Limit     - Control rod moving too fast
+  Underspeed Turbine - Turbine RPM <2900 while running
+
+ROW 3 (Local Power/Thermal):
+────────────────────────────
+  Local Overpower    - Hotspot in core (local flux >2.0x)
+  ΔT High           - Temperature differential too large
+  Refuel Interlock   - Fuel level <10% (shutdown required)
+  Load Mismatch      - Electrical load doesn't match generation
+
+ROW 4 (Reactivity/Flow):
+────────────────────────
+  Reactivity Drift   - Uncontrolled power changes
+  Flow Low           - Coolant flow <80 m³/h during operation
+  Position Fault     - Control rod position error
+  Heat Sink Limit    - Unable to remove heat adequately
+
+ALERT COLORS:
+─────────────
+  Dark  - Normal, no alert
+  Red   - Active alert condition
+
+═══════════════════════════════════════════════════════════════════════════════
+6. ARCCS SYSTEM
+═══════════════════════════════════════════════════════════════════════════════
+
+The Automated Reactor Computer Control System (ARCCS) provides:
+
+▸ AUTOMATIC POWER CONTROL
+  - Adjusts AUTO (A-type) control rods to maintain target power
+  - If power >102%: Inserts auto rods by 2%
+  - If power <98%: Withdraws auto rods by 2%
+  - Prevents manual rod positions from being overridden
+
+▸ MONITORING AND WARNINGS
+  - Coolant temperature excursions
+  - Neutron flux imbalances (flux tilt)
+  - Fuel depletion status
+  - Pump performance relative to power level
+
+▸ RECOMMENDATIONS
+  ARCCS will suggest operator actions for:
+  - Temperature control
+  - Flux balancing
+  - Refueling schedules
+  - Pump adjustments
+
+Note: ARCCS recommendations should be carefully considered but operators have
+final authority. Override automatic actions only when necessary.
+
+═══════════════════════════════════════════════════════════════════════════════
+7. NORMAL OPERATING PROCEDURES
+═══════════════════════════════════════════════════════════════════════════════
+
+7.1 REACTOR STARTUP
+───────────────────
+1. Verify all systems show nominal in status panels
+2. Enter command: start
+3. Enter PIN when prompted (default: 1234)
+4. Monitor automated startup sequence:
+   - Phase 1: Pre-startup checks (safety systems, rods)
+   - Phase 2: Cooling system activation (pumps start)
+   - Phase 3: Core thermal preparation (heating, pressurization)
+   - Phase 4: Nuclear startup (criticality)
+   - Phase 5: Power ramp to 100%
+5. Startup duration: approximately 35 seconds
+6. Verify ARCCS shows "automatic control ACTIVE"
+7. Monitor all parameters stabilize
+
+7.2 NORMAL OPERATION
+────────────────────
+Target Parameters:
+  Power:       100% (3200 MW thermal, ~1000 MW electrical)
+  Temperature: 500K average
+  Pressure:    155 bar
+  Pump Flow:   120 m³/h (both pumps)
+  Turbine:     3000 RPM
+
+Monitoring:
+  - Check ARCCS log for automatic adjustments
+  - Review alert grid every 5 minutes
+  - Monitor individual rod temperatures (click for detail)
+  - Verify neutron flux remains balanced
+  - Track fuel depletion rates
+
+Routine Adjustments:
+  - ARCCS handles minor power fluctuations automatically
+  - Manually adjust C-type control rods for major power changes
+  - Use batch commands (stage) for multiple simultaneous changes
+
+7.3 POWER LEVEL CHANGES
+────────────────────────
+To increase power:
+  1. Withdraw control rods gradually (reduce insertion %)
+  2. Monitor temperature and pressure
+  3. Allow ARCCS to stabilize
+  4. Example: stage set 44 15
+             stage set 31 15
+             stage run
+
+To decrease power:
+  1. Insert control rods (increase insertion %)
+  2. Reduce pressure if needed
+  3. Monitor coolant temperature
+  
+Limits:
+  - Do not change rod positions >10% per adjustment
+  - Allow 30 seconds between major changes
+  - Never fully withdraw all rods simultaneously
+
+7.4 FUEL MANAGEMENT
+───────────────────
+- Fuel rods deplete at different rates based on neutron flux
+- High flux areas deplete faster (check neutron flux in rod detail)
+- Schedule refueling when average fuel <40%
+- ARCCS will warn at <30%
+- Refuel interlock triggers at <10% (requires shutdown)
+
+To check fuel status:
+  1. Click on F-type rods in grid
+  2. View fuel percentage and neutron flux
+  3. Use 'status' command for average fuel level
+
+═══════════════════════════════════════════════════════════════════════════════
+8. EMERGENCY PROCEDURES
+═══════════════════════════════════════════════════════════════════════════════
+
+8.1 SCRAM (EMERGENCY SHUTDOWN)
+──────────────────────────────
+Initiate SCRAM for:
+  - Power excursion (>105%)
+  - Loss of coolant flow
+  - Excessive radiation in control room
+  - Multiple critical alerts
+  - Uncontrolled reactivity changes
+
+Procedure:
+  1. Press SCRAM button (red, top of status panel) OR
+  2. Type command: scram
+  3. All control rods insert to 100%
+  4. Power drops rapidly
+  5. Pumps continue running to remove decay heat
+  6. Monitor temperature during coastdown
+  7. Do not restart without full inspection
+
+8.2 LOSS OF COOLANT FLOW
+────────────────────────
+If pump flow drops below 80 m³/h:
+  1. Reduce power immediately: power 50
+  2. Check pump status: status
+  3. Attempt pump restart: pump 1 120 / pump 2 120
+  4. If flow not restored: SCRAM
+  5. Do not operate >50% power with single pump
+
+8.3 HIGH TEMPERATURE
+────────────────────
+If coolant temperature >530K:
+  1. Reduce power: power 80
+  2. Verify pump flows: both should be 120 m³/h
+  3. Increase pressure if low: pressure 155
+  4. Insert control rods if temperature continues rising
+  5. SCRAM if temperature exceeds 600K
+
+8.4 POWER EXCURSION
+───────────────────
+If power rises above 105%:
+  1. ARCCS will auto-insert control rods
+  2. Manually assist: insert control rods (higher insertion %)
+  3. If power exceeds 110%: immediate SCRAM
+  4. Investigate cause before restart
+
+8.5 FLUX TILT (Neutron Imbalance)
+─────────────────────────────────
+If ARCCS warns of flux tilt:
+  1. Review neutron flux distribution (click F-rods)
+  2. Insert rods in high-flux regions
+  3. Withdraw rods in low-flux regions
+  4. Make small adjustments (2-5% at a time)
+  5. Use batch commands to balance smoothly
+
+8.6 RADIATION ALARM
+───────────────────
+If control room radiation >1.0 mSv/h:
+  1. Verify reactor containment integrity
+  2. Consider power reduction
+  3. If radiation >5.0 mSv/h: SCRAM and evacuate
+  4. Background level is 0.15 mSv/h
+  5. Normal operation: 0.5-0.8 mSv/h
+
+═══════════════════════════════════════════════════════════════════════════════
+9. PARAMETER LIMITS
+═══════════════════════════════════════════════════════════════════════════════
+
+SAFE OPERATING LIMITS:
+──────────────────────
+Core Power:          0-100% (0-3200 MW thermal)
+  Caution:           >105%
+  Emergency:         >110%
+
+Coolant Temperature: 280-530K
+  Normal operation:  480-520K
+  Caution:           >530K
+  Emergency:         >600K
+
+System Pressure:     100-170 bar
+  Normal operation:  150-160 bar
+  Caution:           <110 bar or >170 bar
+  Emergency:         <90 bar or >180 bar
+
+Pump Flow:           0-150 m³/h per pump
+  Minimum for >80% power: 100 m³/h
+  Normal operation:       120 m³/h
+  Emergency:              <80 m³/h while at power
+
+Turbine Speed:       0-3200 RPM
+  Normal:            2950-3050 RPM
+  Caution:           <2900 or >3100 RPM
+  Trip:              <2800 or >3200 RPM
+
+Control Room Radiation: 0-10 mSv/h
+  Background:        0.15 mSv/h
+  Normal operation:  0.4-0.8 mSv/h
+  Caution:           >1.0 mSv/h
+  Evacuation:        >5.0 mSv/h
+
+Fuel Level:          0-100%
+  Normal:            >50%
+  Plan refueling:    <40%
+  Schedule shutdown: <30%
+  Refuel interlock:  <10%
+
+Structural Integrity: 0-100%
+  Normal:            >95%
+  Caution:           <90%
+  Emergency:         <70%
+
+CONTROL ROD INSERTION:
+──────────────────────
+0%   = Fully withdrawn (maximum reactivity)
+50%  = Half inserted
+100% = Fully inserted (maximum neutron absorption)
+
+Normal operating positions vary, but typical:
+  - Mix of 20-60% insertion across control rods
+  - Never fully withdraw all rods
+  - SCRAM = all rods to 100%
+
+TEMPERATURE SENSORS:
+────────────────────
+Coolant inlet:  ~450K
+Coolant outlet: ~550K
+Maximum:        700K (local)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+END OF OPERATOR GUIDANCE MANUAL
+
+For technical support, contact the Reactor Operations Department.
+
+Stay safe, follow procedures, and monitor the ARCCS system at all times.
+
+═══════════════════════════════════════════════════════════════════════════════
