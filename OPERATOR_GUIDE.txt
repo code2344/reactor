@@ -37,12 +37,22 @@ MAIN DISPLAY SECTIONS:
 
 ▸ REACTOR GRID (Left)
   - 13x13 grid showing all reactor positions
-  - Click any rod for detailed information
+  - Click any rod for detailed information (in-window overlay)
   - Each cell shows:
     * Rod type (letter in upper left)
     * Rod number (number in upper right)
-    * Temperature bar (bottom left, 1/6 of cell height)
-    * Pressure bar (bottom right, 1/6 of cell height)
+    * Four indicator boxes at bottom (2/5 of cell height):
+      1. Temperature (leftmost) - Shows temp in K
+      2. Pressure (2nd from left) - Shows pressure in bar
+      3. Fuel Level (2nd from right) - Shows fuel % (F-rods only)
+      4. Neutron Flux (rightmost) - Shows flux multiplier
+  - Box colors indicate status (blue→yellow→red for temp/flux,
+    green→yellow→red for pressure/fuel)
+
+▸ ARCCS (Left, Below Grid)
+  - Recommendation bar: Current system recommendation (gold text)
+  - Log: Automated control actions and warnings
+  - Rate-limited to avoid spam (messages spaced 10-60 seconds apart)
 
 ▸ STATUS PANELS (Right, Top)
   CORE:       Power output, average temperature
@@ -130,6 +140,10 @@ set <rod_number> <percentage>
   Percentage range: 0-100
     0   = fully withdrawn (maximum reactivity)
     100 = fully inserted (minimum reactivity)
+  
+  NOTE: This is how you control reactor power. There is no
+  direct "power" command - power is controlled via rod positions
+  and coolant flow, just like in a real reactor.
 
 temp <sensor_number> <kelvin>
   Set temperature sensor reading.
@@ -137,13 +151,6 @@ temp <sensor_number> <kelvin>
     Sets temperature sensor #98 to 450K
   Valid for T (Temperature) rod types only.
   Range: 0-3500K
-  
-power <percentage>
-  Adjust core power output.
-  Example: power 75
-    Sets reactor to 75% power
-  Range: 0-100%
-  Changes gradually to simulate realistic operation.
   
 pressure <bar>
   Adjust system pressure.
