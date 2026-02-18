@@ -62,7 +62,7 @@ class GridUI:
     def __init__(self, root):
         self.root = root
 
-        self.num_to_cell = {}   # number -> (canvas, letter)
+        self.num_to_cell = {}   # number -> (canvas, letter, temp_box, pressure_box, fuel_box, flux_box, temp_text, pressure_text, fuel_text, flux_text)
         self.num_to_pos = {}    # number -> (row, col) for proximity calculations
         self.state = {}         # alarm state
         self.custom_text = {}   # number -> message override
@@ -85,10 +85,16 @@ class GridUI:
         self.alerts = {}  # alert status dictionary
         self.staged_commands = []  # commands staged for batch execution
         self.rod_temp_offsets = {}  # individual temperature offsets for each rod
+        self.arccs_last_message_time = 0  # rate limiting for ARCCS messages
+        self.arccs_recommendation = "System nominal - no action required"  # Current ARCCS recommendation
 
         # Main container
         main_frame = tk.Frame(root, bg="black")
         main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Detail overlay (initially hidden)
+        self.detail_overlay = tk.Frame(root, bg="#000000", bd=3, relief="raised")
+        self.detail_overlay.place_forget()  # Hidden initially
 
         # Left side: Grid
         left_frame = tk.Frame(main_frame, bg="black")
@@ -120,22 +126,40 @@ class GridUI:
                     canvas.create_text(CELL_SIZE-5, 5, text=str(number), anchor="ne",
                                        fill="#aaaaaa", font=("Helvetica", 8))
 
-                    # Create temperature and pressure bars at bottom (each 1/6 of cell)
-                    bar_height = CELL_SIZE // 6
-                    bar_width = (CELL_SIZE - 4) // 2
+                    # Create 4 boxes at bottom 2/5 of cell: temp, pressure, fuel, flux
+                    bar_height = int(CELL_SIZE * 2 / 5)
+                    bar_width = (CELL_SIZE - 6) // 4  # 4 boxes across
+                    bar_y = CELL_SIZE - bar_height - 2
                     
-                    # Temperature bar (bottom left, takes 1/6 height)
-                    temp_bar_y = CELL_SIZE - bar_height - 2
-                    temp_bar = canvas.create_rectangle(2, temp_bar_y, 2 + bar_width, CELL_SIZE - 2, 
+                    # Temperature box (leftmost)
+                    temp_box = canvas.create_rectangle(2, bar_y, 2 + bar_width, CELL_SIZE - 2, 
                                                         fill="#1a1a1a", outline="#444", width=1)
-                    # Pressure bar (bottom right, takes 1/6 height)
-                    pressure_bar = canvas.create_rectangle(2 + bar_width + 2, temp_bar_y, CELL_SIZE - 2, CELL_SIZE - 2,
+                    temp_text = canvas.create_text(2 + bar_width // 2, bar_y + bar_height // 2, 
+                                                    text="", fill="white", font=("Courier", 6, "bold"))
+                    
+                    # Pressure box
+                    pressure_box = canvas.create_rectangle(2 + bar_width + 1, bar_y, 2 + 2*bar_width + 1, CELL_SIZE - 2,
                                                            fill="#1a1a1a", outline="#444", width=1)
+                    pressure_text = canvas.create_text(2 + bar_width + 1 + bar_width // 2, bar_y + bar_height // 2,
+                                                        text="", fill="white", font=("Courier", 6, "bold"))
+                    
+                    # Fuel box
+                    fuel_box = canvas.create_rectangle(2 + 2*bar_width + 2, bar_y, 2 + 3*bar_width + 2, CELL_SIZE - 2,
+                                                        fill="#1a1a1a", outline="#444", width=1)
+                    fuel_text = canvas.create_text(2 + 2*bar_width + 2 + bar_width // 2, bar_y + bar_height // 2,
+                                                    text="", fill="white", font=("Courier", 6, "bold"))
+                    
+                    # Neutron flux box (rightmost)
+                    flux_box = canvas.create_rectangle(2 + 3*bar_width + 3, bar_y, CELL_SIZE - 2, CELL_SIZE - 2,
+                                                        fill="#1a1a1a", outline="#444", width=1)
+                    flux_text = canvas.create_text(2 + 3*bar_width + 3 + bar_width // 2, bar_y + bar_height // 2,
+                                                    text="", fill="white", font=("Courier", 6, "bold"))
                     
                     # Initialize individual temperature offset for this rod
                     self.rod_temp_offsets[number] = random.uniform(-5, 5)
 
-                    self.num_to_cell[number] = (canvas, letter, temp_bar, pressure_bar)
+                    self.num_to_cell[number] = (canvas, letter, temp_box, pressure_box, fuel_box, flux_box, 
+                                                temp_text, pressure_text, fuel_text, flux_text)
                     self.num_to_pos[number] = (r, c)
                     self.state[number] = {"mode": "off", "flash": False, "phase": False}
                     
@@ -152,6 +176,12 @@ class GridUI:
         arccs_label = tk.Label(left_frame, text="ARCCS (Automated Reactor Computer Control System)", 
                                bg="black", fg="#00aaff", font=("Helvetica", 9, "bold"))
         arccs_label.pack(anchor="w", pady=(10, 3))
+        
+        # ARCCS current recommendation (1 line)
+        self.arccs_recommendation_box = tk.Label(left_frame, text="System nominal - no action required",
+                                                  bg="#001a2a", fg="#ffaa00", font=("Courier", 8, "bold"),
+                                                  anchor="w", padx=5, relief="sunken", bd=1)
+        self.arccs_recommendation_box.pack(fill="x", pady=(0, 3))
 
         self.arccs_text = tk.Text(left_frame, height=8, width=70, bg="#0a0a15", fg="#88ccff", 
                                   font=("Courier", 8), wrap="word")
@@ -750,51 +780,100 @@ class GridUI:
     def arccs_control(self):
         """ARCCS automated control logic - adjusts auto rods and provides recommendations"""
         if not self.running:
+            self.arccs_recommendation = "System nominal - no action required"
+            self.arccs_recommendation_box.config(text=self.arccs_recommendation)
             return
         
-        # Check power deviation
-        if self.core_power > 102:
-            # Power excursion - insert auto rods slightly
-            auto_rods = [num for num, cell_data in self.num_to_cell.items() if cell_data[1] == "A"]
-            for rod_num in auto_rods:
-                current_insertion = self.control_rod_levels.get(rod_num, 0)
-                if current_insertion < 95:  # Don't go to 100%, leave some margin
-                    new_insertion = min(95, current_insertion + 2)
-                    self.control_rod_levels[rod_num] = new_insertion
-            self.log_arccs(f"AUTO: Power {self.core_power:.1f}% - inserting auto control rods")
-            
-        elif self.core_power < 98 and self.core_power > 50:
-            # Power deficit - withdraw auto rods slightly
-            auto_rods = [num for num, cell_data in self.num_to_cell.items() if cell_data[1] == "A"]
-            for rod_num in auto_rods:
-                current_insertion = self.control_rod_levels.get(rod_num, 0)
-                if current_insertion > 5:  # Don't fully withdraw
-                    new_insertion = max(5, current_insertion - 2)
-                    self.control_rod_levels[rod_num] = new_insertion
-            self.log_arccs(f"AUTO: Power {self.core_power:.1f}% - withdrawing auto control rods")
+        current_time = time.time()
+        recommendation_parts = []
         
-        # Check temperature
-        if self.coolant_temp_avg > 520:
-            self.log_arccs(f"WARN: Coolant temp {self.coolant_temp_avg:.0f}K exceeds nominal - recommend reduce power")
+        # Check power deviation (only adjust and log if significant)
+        if self.core_power > 103:
+            # Power excursion - insert auto rods
+            auto_rods = [num for num, cell_data in self.num_to_cell.items() if cell_data[1] == "A"]
+            adjusted = False
+            for rod_num in auto_rods:
+                current_insertion = self.control_rod_levels.get(rod_num, 0)
+                if current_insertion < 95:
+                    new_insertion = min(95, current_insertion + 3)
+                    self.control_rod_levels[rod_num] = new_insertion
+                    adjusted = True
+            
+            if adjusted and (current_time - self.arccs_last_message_time) > 10:
+                self.log_arccs(f"AUTO: Power {self.core_power:.1f}% - auto rod insertion activated")
+                self.arccs_last_message_time = current_time
+            
+            recommendation_parts.append("CRITICAL: Reduce reactor power immediately")
+            
+        elif self.core_power < 97 and self.core_power > 50:
+            # Power deficit - withdraw auto rods
+            auto_rods = [num for num, cell_data in self.num_to_cell.items() if cell_data[1] == "A"]
+            adjusted = False
+            for rod_num in auto_rods:
+                current_insertion = self.control_rod_levels.get(rod_num, 0)
+                if current_insertion > 5:
+                    new_insertion = max(5, current_insertion - 3)
+                    self.control_rod_levels[rod_num] = new_insertion
+                    adjusted = True
+            
+            if adjusted and (current_time - self.arccs_last_message_time) > 10:
+                self.log_arccs(f"AUTO: Power {self.core_power:.1f}% - auto rod withdrawal activated")
+                self.arccs_last_message_time = current_time
+        
+        # Check temperature and generate recommendation
+        if self.coolant_temp_avg > 530:
+            recommendation_parts.append(f"URGENT: Temp {self.coolant_temp_avg:.0f}K - Insert control rods, increase coolant flow to 140 m³/h")
+            if (current_time - self.arccs_last_message_time) > 15:
+                self.log_arccs(f"WARN: Coolant temp {self.coolant_temp_avg:.0f}K critical")
+                self.arccs_last_message_time = current_time
+        elif self.coolant_temp_avg > 515:
+            recommendation_parts.append(f"CAUTION: Temp {self.coolant_temp_avg:.0f}K - Consider reducing power")
         
         # Check neutron flux imbalance
-        if self.neutron_flux:
+        if self.neutron_flux and len(self.neutron_flux) > 10:
             max_flux = max(self.neutron_flux.values())
             min_flux = min(self.neutron_flux.values())
-            if max_flux > min_flux * 1.8:
-                self.log_arccs(f"WARN: Flux tilt detected (max/min = {max_flux/min_flux:.2f})")
+            if max_flux > min_flux * 2.0:
+                # Find high-flux rods
+                high_flux_rods = [num for num, flux in self.neutron_flux.items() if flux > 1.5]
+                if high_flux_rods:
+                    rod_list = ", ".join(str(r) for r in high_flux_rods[:5])
+                    recommendation_parts.append(f"Flux tilt {max_flux/min_flux:.1f}x - Insert rods {rod_list}")
+                    if (current_time - self.arccs_last_message_time) > 20:
+                        self.log_arccs(f"WARN: Neutron flux imbalance detected - ratio {max_flux/min_flux:.2f}")
+                        self.arccs_last_message_time = current_time
         
-        # Check fuel status
+        # Check fuel status (only log occasionally)
         if self.fuel_levels:
-            low_fuel_rods = [num for num, level in self.fuel_levels.items() if level < 30]
-            if low_fuel_rods and random.random() < 0.05:  # Don't spam
-                self.log_arccs(f"INFO: {len(low_fuel_rods)} fuel rods below 30% - schedule refueling")
+            avg_fuel = sum(self.fuel_levels.values()) / len(self.fuel_levels)
+            critical_fuel_rods = [num for num, level in self.fuel_levels.items() if level < 15]
+            
+            if critical_fuel_rods:
+                recommendation_parts.append(f"CRITICAL: {len(critical_fuel_rods)} rods <15% fuel - SCRAM and refuel required")
+                if (current_time - self.arccs_last_message_time) > 30:
+                    self.log_arccs(f"CRITICAL: {len(critical_fuel_rods)} fuel rods critically depleted")
+                    self.arccs_last_message_time = current_time
+            elif avg_fuel < 30 and (current_time - self.arccs_last_message_time) > 60:
+                self.log_arccs(f"INFO: Average fuel at {avg_fuel:.1f}% - schedule refueling within 24h")
+                self.arccs_last_message_time = current_time
         
         # Check pump status
-        if self.pump_flow.get(1, 0) < 100 and self.core_power > 80:
-            self.log_arccs(f"WARN: Pump 1 flow {self.pump_flow.get(1, 0):.0f} m³/h insufficient for power level")
-        if self.pump_flow.get(2, 0) < 100 and self.core_power > 80:
-            self.log_arccs(f"WARN: Pump 2 flow {self.pump_flow.get(2, 0):.0f} m³/h insufficient for power level")
+        pump1_flow = self.pump_flow.get(1, 0)
+        pump2_flow = self.pump_flow.get(2, 0)
+        if self.core_power > 80:
+            if pump1_flow < 100 or pump2_flow < 100:
+                recommendation_parts.append(f"Coolant flow low - Set pumps to 120 m³/h immediately")
+                if (current_time - self.arccs_last_message_time) > 12:
+                    self.log_arccs(f"WARN: Insufficient coolant flow at {self.core_power:.0f}% power")
+                    self.arccs_last_message_time = current_time
+        
+        # Update recommendation display
+        if recommendation_parts:
+            self.arccs_recommendation = " | ".join(recommendation_parts)
+        else:
+            self.arccs_recommendation = "System nominal - all parameters within limits"
+        
+        self.arccs_recommendation_box.config(text=self.arccs_recommendation)
 
     def update_status_displays(self):
         """Update all status display labels"""
@@ -844,36 +923,88 @@ class GridUI:
         self.update_grid_bars()
 
     def update_grid_bars(self):
-        """Update the temperature and pressure indicator bars on each rod"""
+        """Update the 4 indicator boxes on each rod: temp, pressure, fuel, neutron flux"""
         for rod_num, cell_data in self.num_to_cell.items():
             canvas = cell_data[0]
-            temp_bar = cell_data[2]
-            pressure_bar = cell_data[3]
+            letter = cell_data[1]
+            temp_box = cell_data[2]
+            pressure_box = cell_data[3]
+            fuel_box = cell_data[4]
+            flux_box = cell_data[5]
+            temp_text = cell_data[6]
+            pressure_text = cell_data[7]
+            fuel_text = cell_data[8]
+            flux_text = cell_data[9]
             
             # Calculate temperature and pressure for this rod
             temp = self.calculate_rod_temperature(rod_num)
             pressure = self.calculate_rod_pressure(rod_num)
+            fuel_level = self.fuel_levels.get(rod_num, 100.0) if letter == "F" else 0.0
+            flux = self.neutron_flux.get(rod_num, 0.0)
             
-            # Temperature bar: map 300K-700K to color gradient
-            temp_norm = max(0, min(1, (temp - 300) / 400))
+            # Temperature box: map 250K-700K to color gradient
+            temp_norm = max(0, min(1, (temp - 250) / 450))
             if temp_norm < 0.5:
                 # Blue to yellow
-                temp_color = self._lerp_color("#0066ff", "#ffff00", temp_norm * 2)
+                temp_color = self._lerp_color("#0055cc", "#ffcc00", temp_norm * 2)
+                temp_text_color = "black" if temp_norm > 0.3 else "white"
             else:
                 # Yellow to red
-                temp_color = self._lerp_color("#ffff00", "#ff0000", (temp_norm - 0.5) * 2)
+                temp_color = self._lerp_color("#ffcc00", "#ff0000", (temp_norm - 0.5) * 2)
+                temp_text_color = "black" if temp_norm < 0.7 else "white"
             
-            # Pressure bar: map 90-170 bar to color gradient
+            # Pressure box: map 90-170 bar to color gradient
             pressure_norm = max(0, min(1, (pressure - 90) / 80))
             if pressure_norm < 0.5:
                 # Green to yellow
-                pressure_color = self._lerp_color("#00ff00", "#ffff00", pressure_norm * 2)
+                pressure_color = self._lerp_color("#00aa00", "#ffcc00", pressure_norm * 2)
+                pressure_text_color = "black" if pressure_norm > 0.3 else "white"
             else:
                 # Yellow to red
-                pressure_color = self._lerp_color("#ffff00", "#ff0000", (pressure_norm - 0.5) * 2)
+                pressure_color = self._lerp_color("#ffcc00", "#ff0000", (pressure_norm - 0.5) * 2)
+                pressure_text_color = "black" if pressure_norm < 0.7 else "white"
             
-            canvas.itemconfig(temp_bar, fill=temp_color)
-            canvas.itemconfig(pressure_bar, fill=pressure_color)
+            # Fuel box: green to yellow to red based on fuel level
+            if fuel_level > 50:
+                fuel_norm = (fuel_level - 50) / 50
+                fuel_color = self._lerp_color("#ffcc00", "#00aa00", fuel_norm)
+                fuel_text_color = "black"
+            elif fuel_level > 0:
+                fuel_norm = fuel_level / 50
+                fuel_color = self._lerp_color("#ff0000", "#ffcc00", fuel_norm)
+                fuel_text_color = "white" if fuel_level < 25 else "black"
+            else:
+                fuel_color = "#1a1a1a"
+                fuel_text_color = "#666"
+            
+            # Neutron flux box: low (blue) to high (red)
+            flux_norm = max(0, min(1, flux / 3.0))  # 0-3x range
+            if flux_norm < 0.5:
+                flux_color = self._lerp_color("#0055cc", "#ffcc00", flux_norm * 2)
+                flux_text_color = "black" if flux_norm > 0.3 else "white"
+            else:
+                flux_color = self._lerp_color("#ffcc00", "#ff0000", (flux_norm - 0.5) * 2)
+                flux_text_color = "black" if flux_norm < 0.7 else "white"
+            
+            # Update box colors
+            canvas.itemconfig(temp_box, fill=temp_color)
+            canvas.itemconfig(pressure_box, fill=pressure_color)
+            canvas.itemconfig(fuel_box, fill=fuel_color)
+            canvas.itemconfig(flux_box, fill=flux_color)
+            
+            # Update text values with contrast
+            canvas.itemconfig(temp_text, text=f"{int(temp)}", fill=temp_text_color)
+            canvas.itemconfig(pressure_text, text=f"{int(pressure)}", fill=pressure_text_color)
+            
+            if fuel_level > 0:
+                canvas.itemconfig(fuel_text, text=f"{int(fuel_level)}", fill=fuel_text_color)
+            else:
+                canvas.itemconfig(fuel_text, text="-", fill=fuel_text_color)
+            
+            if flux > 0.01:
+                canvas.itemconfig(flux_text, text=f"{flux:.1f}", fill=flux_text_color)
+            else:
+                canvas.itemconfig(flux_text, text="-", fill=flux_text_color)
     
     def _lerp_color(self, color1, color2, t):
         """Linearly interpolate between two hex colors"""
@@ -1073,74 +1204,85 @@ class GridUI:
             self.process_gui_command(cmd)
             self.cmd_input.delete(0, tk.END)
 
-    # -------- ZOOM VIEW --------
+    # -------- DETAIL VIEW OVERLAY --------
     def open_zoom(self, n):
+        """Show rod detail in overlay panel"""
         letter = self.num_to_cell[n][1]
         rod_type = ROD_TYPES.get(letter, "Unknown")
-
-        top = tk.Toplevel(self.root)
-        top.title(f"Cell {n}")
-        top.configure(bg="#111")
-
-        frame = tk.Frame(top, bg="#111")
-        frame.pack(padx=20, pady=20)
-
+        
+        # Clear previous content
+        for widget in self.detail_overlay.winfo_children():
+            widget.destroy()
+        
+        # Create detail content
+        frame = tk.Frame(self.detail_overlay, bg="#111")
+        frame.pack(padx=15, pady=15)
+        
+        # Close button
+        close_btn = tk.Button(frame, text="✕", command=self.close_detail_overlay,
+                             bg="#ff0000", fg="white", font=("Helvetica", 10, "bold"),
+                             width=3, relief="flat")
+        close_btn.pack(anchor="ne", padx=5, pady=5)
+        
         # Rod letter
-        title = tk.Label(frame, text=letter, bg="#111", fg="white", font=("Helvetica", 48, "bold"))
+        title = tk.Label(frame, text=letter, bg="#111", fg="white", font=("Helvetica", 36, "bold"))
         title.pack()
-
+        
         # Rod number and type
-        info = tk.Label(frame, text=f"Rod {n} - {rod_type}", bg="#111", fg="#cccccc", font=("Helvetica", 14))
-        info.pack(pady=(10, 0))
-
+        info = tk.Label(frame, text=f"Rod {n} - {rod_type}", bg="#111", fg="#cccccc", font=("Helvetica", 12))
+        info.pack(pady=(5, 0))
+        
         # Position
         if n in self.num_to_pos:
             r, c = self.num_to_pos[n]
-            pos = tk.Label(frame, text=f"Position: Row {r}, Col {c}", bg="#111", fg="#888888", font=("Helvetica", 10))
-            pos.pack(pady=(5, 0))
-
-        # Custom message if set
-        if n in self.custom_text:
-            msg = tk.Label(frame, text=self.custom_text[n], bg="#111", fg="#aaaaaa", font=("Helvetica", 12))
-            msg.pack(pady=(5, 0))
-
+            pos = tk.Label(frame, text=f"Position: Row {r}, Col {c}", bg="#111", fg="#888888", font=("Helvetica", 9))
+            pos.pack(pady=(3, 0))
+        
         # Separator
-        tk.Frame(frame, height=2, bg="#333").pack(fill="x", pady=10)
-
-        # Temperature (calculated from nearest sensors)
+        tk.Frame(frame, height=2, bg="#333").pack(fill="x", pady=8)
+        
+        # Temperature
         temp = self.calculate_rod_temperature(n)
-        temp_label = tk.Label(frame, text=f"Temperature: {temp:.1f}K", bg="#111", fg="#ff6666", font=("Helvetica", 11, "bold"))
-        temp_label.pack(pady=(0, 5))
-
-        # Pressure (with slight variation based on position)
+        temp_label = tk.Label(frame, text=f"Temperature: {temp:.1f}K", bg="#111", fg="#ff6666", font=("Helvetica", 10, "bold"))
+        temp_label.pack(pady=(0, 4))
+        
+        # Pressure
         pressure = self.calculate_rod_pressure(n)
-        pressure_label = tk.Label(frame, text=f"Pressure: {pressure:.1f} bar", bg="#111", fg="#6699ff", font=("Helvetica", 11, "bold"))
-        pressure_label.pack(pady=(0, 5))
-
+        pressure_label = tk.Label(frame, text=f"Pressure: {pressure:.1f} bar", bg="#111", fg="#6699ff", font=("Helvetica", 10, "bold"))
+        pressure_label.pack(pady=(0, 4))
+        
         # Temperature sensor specific
         if letter == "T":
             if n in self.temperatures:
-                sensor_temp = tk.Label(frame, text=f"Sensor Reading: {self.temperatures[n]:.1f}K", bg="#111", fg="#ffaa00", font=("Helvetica", 10))
-                sensor_temp.pack(pady=(0, 5))
-
+                sensor_temp = tk.Label(frame, text=f"Sensor Reading: {self.temperatures[n]:.1f}K", bg="#111", fg="#ffaa00", font=("Helvetica", 9))
+                sensor_temp.pack(pady=(0, 4))
+        
         # Fuel rod specific
         if letter == "F":
             fuel_pct = self.fuel_levels.get(n, 100.0)
             fuel_color = "#00ff00" if fuel_pct > 75 else "#ffff00" if fuel_pct > 50 else "#ff6666"
-            fuel_label = tk.Label(frame, text=f"Fuel Level: {fuel_pct:.1f}%", bg="#111", fg=fuel_color, font=("Helvetica", 11, "bold"))
-            fuel_label.pack(pady=(0, 5))
+            fuel_label = tk.Label(frame, text=f"Fuel Level: {fuel_pct:.1f}%", bg="#111", fg=fuel_color, font=("Helvetica", 10, "bold"))
+            fuel_label.pack(pady=(0, 4))
             
             # Show neutron flux
-            flux = self.neutron_flux.get(n, 1.0)
+            flux = self.neutron_flux.get(n, 0.0)
             flux_color = "#00ff00" if flux < 1.2 else "#ffff00" if flux < 1.5 else "#ff6666"
-            flux_label = tk.Label(frame, text=f"Neutron Flux: {flux:.2f}x", bg="#111", fg=flux_color, font=("Helvetica", 10))
-            flux_label.pack(pady=(0, 5))
-
-        # Control rod insertion level if applicable
+            flux_label = tk.Label(frame, text=f"Neutron Flux: {flux:.2f}x", bg="#111", fg=flux_color, font=("Helvetica", 9))
+            flux_label.pack(pady=(0, 4))
+        
+        # Control rod insertion level
         if letter in CONTROL_RODS:
             insertion = self.control_rod_levels.get(n, 0)
-            level = tk.Label(frame, text=f"Insertion: {insertion}%", bg="#111", fg="#ffff00", font=("Helvetica", 11, "bold"))
-            level.pack(pady=(0, 5))
+            level = tk.Label(frame, text=f"Insertion: {insertion}%", bg="#111", fg="#ffff00", font=("Helvetica", 10, "bold"))
+            level.pack(pady=(0, 4))
+        
+        # Show overlay centered in window
+        self.detail_overlay.place(relx=0.5, rely=0.5, anchor="center")
+        self.detail_overlay.lift()
+    
+    def close_detail_overlay(self):
+        """Hide the detail overlay"""
+        self.detail_overlay.place_forget()
 
     # -------- COMMAND PARSER --------
     def process_gui_command(self, cmd_str):
@@ -1205,19 +1347,6 @@ class GridUI:
                         self.coolant_temp_avg = new_avg
                         self.update_status_displays()
                 self.log_console(f"Temp sensor {rod_num} set to {temperature:.1f}K")
-
-            elif cmd == "power":
-                if len(parts) < 2:
-                    self.log_console("ERROR: power requires percentage 0-100")
-                    return
-                target_power = float(parts[1])
-                if not 0 <= target_power <= 100:
-                    self.log_console(f"ERROR: Power must be 0-100%")
-                    return
-                
-                current = self.core_power
-                self.log_console(f"Adjusting power from {current:.1f}% to {target_power:.1f}%")
-                threading.Thread(target=self.gradual_power_change, args=(target_power,), daemon=True).start()
 
             elif cmd == "pressure":
                 if len(parts) < 2:
@@ -1325,7 +1454,6 @@ class GridUI:
                 self.log_console("  scram                 - Emergency shutdown")
                 self.log_console("  set <rod> <pct>       - Set control rod % (C/A only)")
                 self.log_console("  temp <sensor> <K>     - Set temperature sensor")
-                self.log_console("  power <pct>           - Set core power %")
                 self.log_console("  pressure <bar>        - Set system pressure")
                 self.log_console("  pump <num> <flow>     - Set pump flow m³/h")
                 self.log_console("  stage <cmd>           - Stage a command for later")
@@ -1333,7 +1461,9 @@ class GridUI:
                 self.log_console("  stage clear           - Clear staged commands")
                 self.log_console("  reset                 - Reset to defaults")
                 self.log_console("  status                - Show reactor status")
-                self.log_console("Click rods for detailed view (temp/pressure/fuel)")
+                self.log_console("Click rods for detailed view")
+                self.log_console("NOTE: Power is controlled via control rods,")
+                self.log_console("      not directly set (realistic operation)")
                 self.log_console("="*40 + "\n")
 
             elif cmd == "status":
@@ -1404,10 +1534,11 @@ class GridUI:
 
 # ---------------- RUN ----------------
 root = tk.Tk()
-root.title("RBMK-1000 Reactor Control Station")
+root.title("RBMK-1000 Reactor Control Station Software v1.0.1")
 root.configure(bg="black")
 root.geometry("1200x700")  # Set initial size
 root.minsize(1000, 600)  # Set minimum size
+root.tk.call("tk", "appname", "RBMK-1000 Reactor Control Station Software v1.0.1")
 
 GridUI(root)
 
