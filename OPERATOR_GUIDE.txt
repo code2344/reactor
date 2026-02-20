@@ -41,11 +41,19 @@ MAIN DISPLAY SECTIONS:
   - Each cell shows:
     * Rod type (letter in upper left)
     * Rod number (number in upper right)
-    * Four indicator boxes at bottom (2/5 of cell height):
-      1. Temperature (leftmost) - Shows temp in K
-      2. Pressure (2nd from left) - Shows pressure in bar
-      3. Fuel Level (2nd from right) - Shows fuel % (F-rods only)
-      4. Neutron Flux (rightmost) - Shows flux multiplier
+    * 2x2 grid of indicator boxes at bottom 2/5 of cell:
+      
+      Top row (second 1/5 from bottom):
+        [Fuel Level] [Neutron Flux]
+      
+      Bottom row (bottom 1/5):
+        [Temperature] [Pressure]
+    
+    * Temperature (bottom left) - Shows temp in K
+    * Pressure (bottom right) - Shows pressure in bar
+    * Fuel Level (top left) - Shows fuel % (F-rods only)
+    * Neutron Flux (top right) - Shows flux multiplier
+    
   - Box colors indicate status (blue→yellow→red for temp/flux,
     green→yellow→red for pressure/fuel)
 
@@ -132,11 +140,23 @@ scram
   Immediately inserts all control rods.
   Use in emergency situations only.
 
-set <rod_number> <percentage>
+set <rod_number|*> <percentage> [/override]
   Set control rod insertion.
-  Example: set 66 20
-    Sets rod #66 to 20% insertion
-  Valid for C (Control) and A (Auto) rod types only.
+  
+  Single rod example:
+    set 66 20
+      Sets rod #66 to 20% insertion
+  
+  All control rods:
+    set * 50
+      Sets ALL C-type (manual control) rods to 50%
+  
+  All control + auto rods:
+    set * 50 /override
+      Sets ALL C-type AND A-type (auto) rods to 50%
+      Use with caution - disables ARCCS auto control
+  
+  Valid for C (Control) and A (Auto) rod types.
   Percentage range: 0-100
     0   = fully withdrawn (maximum reactivity)
     100 = fully inserted (minimum reactivity)
@@ -144,6 +164,11 @@ set <rod_number> <percentage>
   NOTE: This is how you control reactor power. There is no
   direct "power" command - power is controlled via rod positions
   and coolant flow, just like in a real reactor.
+  
+  WILDCARD USAGE:
+  - Use * to target all rods at once (faster than staging)
+  - Default: only C-type manual control rods
+  - Add /override flag to include A-type auto rods
 
 temp <sensor_number> <kelvin>
   Set temperature sensor reading.
@@ -159,11 +184,22 @@ pressure <bar>
   Range: 0-200 bar
   Changes gradually.
   
-pump <pump_number> <flow_rate>
+pump <pump_number|*> <flow_rate|on|off>
   Set coolant pump flow rate.
-  Example: pump 1 120
-    Sets pump #1 to 120 m³/h
-  Can also use: pump 1 on/off
+  
+  Single pump example:
+    pump 1 120
+      Sets pump #1 to 120 m³/h
+  
+  All pumps:
+    pump * 120
+      Sets ALL pumps to 120 m³/h
+  
+  Can also use: pump 1 on/off (defaults to 120 m³/h when on)
+  
+  WILDCARD USAGE:
+  - Use * to control all pumps simultaneously
+  - Useful for rapid coolant flow adjustments
 
 BATCH OPERATION (STAGING):
 ───────────────────────────
@@ -183,6 +219,23 @@ stage run
   
 stage clear
   Clear all staged commands without executing.
+
+ARCCS COMMANDS:
+───────────────
+
+arccs accept
+  Execute all pending ARCCS recommended commands.
+  When ARCCS displays "Run 'arccs accept'" in the recommendation bar,
+  this command will execute all pending automated suggestions.
+  
+  Example: If ARCCS recommends:
+    "URGENT: Temp 550K - Run 'arccs accept'"
+  
+  Running 'arccs accept' will execute all queued commands such as:
+    set * 70
+    pump * 140
+  
+  This allows rapid response to critical situations.
 
 UTILITY COMMANDS:
 ─────────────────
@@ -246,9 +299,27 @@ The Automated Reactor Computer Control System (ARCCS) provides:
 
 ▸ AUTOMATIC POWER CONTROL
   - Adjusts AUTO (A-type) control rods to maintain target power
-  - If power >102%: Inserts auto rods by 2%
-  - If power <98%: Withdraws auto rods by 2%
-  - Prevents manual rod positions from being overridden
+  - If power >103%: Inserts auto rods aggressively (5% per cycle)
+  - If power <97%: Withdraws auto rods (5% per cycle)
+  - Reports current auto rod positions in log
+
+▸ ROD PROBLEM INDICATORS
+  Rods flash to indicate problems:
+  
+  YELLOW FLASH (Warning):
+    - Temperature >550K
+    - Pressure >160 bar
+    - Neutron flux >2.0x normal
+    - Fuel level <30% (F-rods only)
+  
+  RED FLASH (Critical):
+    - Temperature >600K
+    - Pressure >165 bar
+    - Neutron flux >2.5x normal
+    - Fuel level <15% (F-rods only)
+  
+  Use 'ack' command to acknowledge flashing (stops flash, stays lit).
+  Fix the underlying problem to clear the indicator.
 
 ▸ MONITORING AND WARNINGS
   - Coolant temperature excursions
@@ -256,19 +327,26 @@ The Automated Reactor Computer Control System (ARCCS) provides:
   - Fuel depletion status
   - Pump performance relative to power level
 
-▸ RECOMMENDATIONS
+▸ RECOMMENDATIONS AND COMMAND EXECUTION
   The gold recommendation bar (above the log) displays real-time
-  operational guidance:
-  - Specific rod numbers to adjust
-  - Coolant flow rate changes needed
-  - Critical warnings requiring immediate action
-  - Updates every second based on reactor state
+  operational guidance with actionable commands:
   
-  ARCCS will suggest operator actions for:
-  - Temperature control
-  - Flux balancing
-  - Refueling schedules
-  - Pump adjustments
+  When ARCCS displays "Run 'arccs accept'", it means:
+  - ARCCS has prepared specific commands to resolve the issue
+  - Type 'arccs accept' to execute all recommended commands
+  - Commands are executed immediately and logged
+  
+  Example scenario:
+    Recommendation: "URGENT: Temp 550K - Run 'arccs accept'"
+    ▸ Type: arccs accept
+    ▸ ARCCS executes: set * 70, pump * 140
+    ▸ Problem resolved automatically
+  
+  ARCCS will prepare commands for:
+  - Temperature control (rod insertion + pump adjustments)
+  - Flux balancing (specific rod adjustments)
+  - Power excursions (emergency rod insertion)
+  - Coolant flow optimization
   
 ▸ INTELLIGENT LOGGING
   The ARCCS log is rate-limited to prevent spam:
@@ -388,28 +466,32 @@ Procedure:
 8.2 LOSS OF COOLANT FLOW
 ────────────────────────
 If pump flow drops below 80 m³/h:
-  1. Reduce power immediately: power 50
+  1. Restart all pumps immediately: pump * 120
   2. Check pump status: status
-  3. Attempt pump restart: pump 1 120 / pump 2 120
-  4. If flow not restored: SCRAM
+  3. If flow not restored: insert all rods: set * 80
+  4. If still critical: SCRAM
   5. Do not operate >50% power with single pump
 
 8.3 HIGH TEMPERATURE
 ────────────────────
 If coolant temperature >530K:
-  1. Reduce power: power 80
-  2. Verify pump flows: both should be 120 m³/h
+  1. Insert all control rods: set * 70
+  2. Verify pump flows: pump * 120
   3. Increase pressure if low: pressure 155
-  4. Insert control rods if temperature continues rising
+  4. If temperature continues rising: set * 90
   5. SCRAM if temperature exceeds 600K
 
 8.4 POWER EXCURSION
 ───────────────────
 If power rises above 105%:
   1. ARCCS will auto-insert control rods
-  2. Manually assist: insert control rods (higher insertion %)
+  2. Override and insert all rods: set * 85 /override
   3. If power exceeds 110%: immediate SCRAM
   4. Investigate cause before restart
+  
+QUICK POWER REDUCTION (Wildcard Method):
+  - Fast response: set * 80 (inserts all manual control rods)
+  - Emergency: set * 90 /override (includes auto rods too)
 
 8.5 FLUX TILT (Neutron Imbalance)
 ─────────────────────────────────
