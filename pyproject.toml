@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "helios-core"
+version = "1.0.0"
+description = "RBMK reactor control station simulator and operator utilities"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Helios Core Team" }]
+dependencies = ["textual>=0.85.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+helios-core = "helios_core.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+helios_core = ["resources/*.txt"]

@@ -1,5 +1,5 @@
 ═══════════════════════════════════════════════════════════════════════════════
-                    HELIOS CORE RBMK-1000 REACTOR CONTROL STATION
+                    RBMK-1000 REACTOR CONTROL STATION
                          OPERATOR GUIDANCE MANUAL
                               Version 1.0
 ═══════════════════════════════════════════════════════════════════════════════

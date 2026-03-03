@@ -1,0 +1,2 @@
+[console_scripts]
+helios-core = helios_core.cli:main
