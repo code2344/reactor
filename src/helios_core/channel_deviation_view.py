@@ -6,6 +6,7 @@ from tkinter import simpledialog
 import time
 import random
 
+from .net import HeliosServerClient
 from .reactor_data import CONTROL_RODS, GRID_LETTERS, ROD_TYPES
 
 # ---------------- GRID LAYOUT ----------------
@@ -33,8 +34,9 @@ threading.Thread(target=command_reader, daemon=True).start()
 
 # ---------------- MAIN UI ----------------
 class GridUI:
-    def __init__(self, root):
+    def __init__(self, root, server_url=None):
         self.root = root
+        self.server_client = HeliosServerClient(server_url) if server_url else None
 
         self.num_to_cell = {}   # number -> (canvas, letter, temp_box, pressure_box, fuel_box, flux_box, temp_text, pressure_text, fuel_text, flux_text)
         self.num_to_pos = {}    # number -> (row, col) for proximity calculations
@@ -1433,11 +1435,15 @@ class GridUI:
                         self.log_console(f"Setting all control rods to {insertion}% insertion (use /override for auto rods)")
                     
                     count = 0
+                    changed_rods = []
                     for num, cell_data in self.num_to_cell.items():
                         letter = cell_data[1]
                         if letter in allowed_types:
                             self.control_rod_levels[num] = insertion
                             count += 1
+                            changed_rods.append(num)
+
+                    self._send_rod_updates(changed_rods, insertion)
                     
                     self.log_console(f"✓ {count} rods set to {insertion}%")
                     return
@@ -1454,6 +1460,7 @@ class GridUI:
                     return
 
                 self.control_rod_levels[rod_num] = insertion
+                self._send_rod_updates([rod_num], insertion)
                 self.log_console(f"Rod {rod_num} set to {insertion}% insertion")
 
             elif cmd == "temp":
@@ -1725,14 +1732,28 @@ class GridUI:
         self.root.after(50, self.process_commands)
 
 
-def run_app():
+    def _send_rod_updates(self, rods, insertion):
+        if not self.server_client:
+            return
+
+        def _worker():
+            for rod in rods:
+                try:
+                    self.server_client.send_rod_update(int(rod), int(insertion))
+                except Exception:
+                    pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+
+def run_app(server_url=None):
     root = tk.Tk()
     root.title("RBMK-1000 Reactor Control Station Software v1.0.2")
     root.configure(bg="black")
     root.geometry("1200x700")
     root.minsize(1000, 600)
     root.tk.call("tk", "appname", "RBMK-1000 Reactor Control Station Software v1.0.2")
-    GridUI(root)
+    GridUI(root, server_url=server_url)
     root.mainloop()
 
 

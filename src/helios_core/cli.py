@@ -1,7 +1,6 @@
 import argparse
 from importlib.resources import files
 
-from .channel_deviation_view import run_app
 from .reactor_utils import estimate_output, reactor_stats, render_ascii_map, rod_type_table
 
 
@@ -10,9 +9,21 @@ def build_parser():
         prog="helios-core",
         description="RBMK reactor control station and utilities",
     )
+    parser.add_argument(
+        "--server",
+        dest="server_url",
+        default=None,
+        help="Remote server URL for rod updates (example: http://127.0.0.1:8000)",
+    )
+
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("gui", help="Launch the reactor control station GUI")
+    subparsers.add_parser("tui", help="Launch the Textual terminal UI")
+
+    serve_parser = subparsers.add_parser("serve", help="Run server-only mode (no GUI)")
+    serve_parser.add_argument("--host", default="127.0.0.1", help="Server host")
+    serve_parser.add_argument("--port", type=int, default=8000, help="Server port")
 
     map_parser = subparsers.add_parser("map", help="Print reactor core layout map")
     map_parser.add_argument(
@@ -38,7 +49,21 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.command in (None, "gui"):
-        run_app()
+        from .main import run_app
+
+        run_app(server_url=args.server_url)
+        return
+
+    if args.command == "tui":
+        from .tui import run_tui
+
+        run_tui(server_url=args.server_url)
+        return
+
+    if args.command == "serve":
+        from .server import serve
+
+        serve(host=args.host, port=args.port)
         return
 
     if args.command == "map":

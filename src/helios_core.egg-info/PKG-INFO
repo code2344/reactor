@@ -5,6 +5,9 @@ Summary: RBMK reactor control station simulator and operator utilities
 Author: Helios Core Team
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
+Requires-Dist: textual>=0.85.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == "dev"
 
 # helios-core
 
@@ -21,6 +24,11 @@ pipx install .
 ```bash
 helios-core                 # Launch GUI
 helios-core gui             # Launch GUI
+helios-core --server=http://127.0.0.1:8000   # GUI with backend server
+helios-core tui             # Launch Textual TUI
+helios-core tui --server=http://127.0.0.1:8000
+helios-core serve           # Run server only (no GUI)
+helios-core serve --port 8000
 helios-core map             # Print reactor core map
 helios-core stats           # Show rod counts and utilization
 helios-core rod-types       # List rod type codes
@@ -34,5 +42,6 @@ helios-core guide --print   # Print operator guide text
 The original launcher script remains available:
 
 ```bash
+python main.py
 python channel-deviation-view.py
 ```
