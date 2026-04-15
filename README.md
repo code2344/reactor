@@ -1,6 +1,6 @@
 # helios-core
 
-RBMK reactor control station simulator with a packaged CLI for `pipx`.
+Helios is a control system for a RBMK style reactor. It can be run as a standalone simulation, or as a server, and I'm making a model
 
 ## Install
 

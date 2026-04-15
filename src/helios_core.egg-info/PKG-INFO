@@ -1,9 +1,9 @@
 Metadata-Version: 2.4
 Name: helios-core
-Version: 1.0.0
+Version: 1.0.3
 Summary: RBMK reactor control station simulator and operator utilities
-Author: Helios Core Team
-Requires-Python: >=3.10
+Author: SuperCode Studios
+Requires-Python: >=3.9
 Description-Content-Type: text/markdown
 Requires-Dist: textual>=0.85.0
 Provides-Extra: dev
@@ -16,7 +16,11 @@ RBMK reactor control station simulator with a packaged CLI for `pipx`.
 ## Install
 
 ```bash
-pipx install .
+pipx install helios-core
+```
+or
+```bash
+pip install helios-core
 ```
 
 ## Commands
