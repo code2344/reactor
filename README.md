@@ -3,7 +3,7 @@
 Helios is a control system for a RBMK style reactor. It can be run as a standalone simulation, or as a server, and I'm making a model
 
 ## Install
-
+[ PIPX INSTALL IS STILL ENTIRELY BROKEN, GIT CLONE THE REOP AND RUN PIPX INSTALL . ]
 ```bash
 pipx install helios-core
 ```
